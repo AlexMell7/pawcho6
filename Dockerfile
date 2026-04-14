@@ -1,44 +1,28 @@
-FROM golang:1.21-alpine AS builder
+# syntax=docker/dockerfile:1
 
+FROM alpine/git:latest AS source
+RUN apk add --no-cache openssh-client
+RUN mkdir -p -m 0700 ~/.ssh && ssh-keyscan github.com >> ~/.ssh/known_hosts
+
+RUN --mount=type=ssh git clone git@github.com:AlexMell7/pawcho6.git /app
+
+FROM golang:1.21-alpine AS builder
 ARG VERSION
 WORKDIR /app
 
-COPY <<EOF main.go
-package main
-import (
-	"fmt"
-	"os"
-	"net"
-)
-func main() {
-	hostname, _ := os.Hostname()
-	addrs, _ := net.InterfaceAddrs()
-	var ip string
-	for _, a := range addrs {
-		if ipnet, ok := a.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
-			if ipnet.IP.To4() != nil {
-				ip = ipnet.IP.String()
-			}
-		}
-	}
-	fmt.Printf("<html><body><h1>Laboratorium 5 - Go + Nginx</h1>")
-	fmt.Printf("<p><b>Wersja:</b> %%s</p>", os.Getenv("APP_VERSION"))
-	fmt.Printf("<p><b>Hostname:</b> %%s</p>", hostname)
-	fmt.Printf("<p><b>IP:</b> %%s</p>", ip)
-	fmt.Printf("</body></html>")
-}
-EOF
+COPY --from=source /app .
 
-ENV APP_VERSION=$VERSION
 RUN CGO_ENABLED=0 GOOS=linux go build -o html-gen main.go
 
-
 FROM nginx:alpine
+
+LABEL org.opencontainers.image.source="https://github.com/AlexMell7/pawcho6"
+LABEL org.opencontainers.image.description="Obraz Lab 6 - Go + Nginx z pobieraniem przez SSH"
+LABEL org.opencontainers.image.licenses="MIT"
 
 COPY --from=builder /app/html-gen /usr/local/bin/html-gen
 ARG VERSION
 ENV APP_VERSION=$VERSION
-
 
 RUN echo '#!/bin/sh' > /entrypoint.sh && \
     echo '/usr/local/bin/html-gen > /usr/share/nginx/html/index.html' >> /entrypoint.sh && \
